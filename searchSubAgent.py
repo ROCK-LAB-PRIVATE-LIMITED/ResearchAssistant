@@ -1,4 +1,4 @@
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = ""
 TARGET_CONTEXT_TOKENS = 28000
 MODEL_NAME = "stepfun/step-3.5-flash:free"
 BASE_URL = "https://openrouter.ai/api/v1"
