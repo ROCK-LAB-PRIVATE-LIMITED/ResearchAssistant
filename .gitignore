@@ -1,0 +1,81 @@
+
+# Streamlit
+.streamlit/secrets.toml
+
+# -----------------------------
+# Python cache and compiled files
+# -----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# -----------------------------
+# Build, dist, and packaging
+# -----------------------------
+# Any folder with 'build' or 'dev' in its name (case-insensitive)
+[Bb]uild*/
+*[Bb]uild*/
+*[Dd]ev*/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+*.manifest
+*.spec
+
+# -----------------------------
+# Virtual environments
+# -----------------------------
+.env/
+.venv/
+venv/
+ENV/
+env/
+dev_env/
+build_env/
+*venv*/
+
+# -----------------------------
+# OS and editor junk
+# -----------------------------
+.DS_Store
+*/.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# VSCode / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -----------------------------
+# Logs and temporary files
+# -----------------------------
+*.log
+*.tmp
+*.bak
+*.old
+*.orig
+*.temp
+
+# -----------------------------
+# Tests and coverage
+# -----------------------------
+.coverage
+htmlcov/
+.cache/
+pytest_cache/
+
+# -----------------------------
+# Miscellaneous
+# -----------------------------
+*.sqlite3
+*.db
+.git
+*/.git
+
+redist/
+assets/
+*config*
