@@ -55,6 +55,7 @@ from pydantic import BaseModel, Field
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage, BaseMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from ddgs import DDGS
@@ -223,16 +224,18 @@ class FinalResponse(BaseModel):
 # 4. PROTECTED NODES (No-Crash Pattern)
 # ==========================================
 
-def node_decide(state: AgentState):
+def node_decide(state: AgentState, config: RunnableConfig):
     tokens = get_total_tokens(state["messages"])
     
     # FORCE RESEARCH UNTIL QUOTA
     if tokens < TARGET_CONTEXT_TOKENS:
         prompt = f"QUOTA: {tokens}/{TARGET_CONTEXT_TOKENS}. You MUST use SearchWeb for more info."
-        model = llm.bind_tools([SearchWeb], tool_choice="SearchWeb")
+        active_llm = config["configurable"].get("llm", llm)
+        model = active_llm.bind_tools([SearchWeb], tool_choice="SearchWeb")
     else:
         prompt = f"QUOTA MET: {tokens}/{TARGET_CONTEXT_TOKENS}. Use FinalResponse now."
-        model = llm.bind_tools([FinalResponse], tool_choice="FinalResponse")
+        active_llm = config["configurable"].get("llm", llm)
+        model = active_llm.bind_tools([FinalResponse], tool_choice="FinalResponse")
 
     res = model.invoke([SystemMessage(content=prompt)] + state["messages"])
     return {"messages": [res]}
@@ -268,13 +271,14 @@ def node_execute_search(state: AgentState):
         "source_manifest": current_manifest
     }
 
-def node_agent_select(state: AgentState):
+def node_agent_select(state: AgentState, config: RunnableConfig):
     """Node: AI chooses to either fetch a result OR start a new search if snippets are bad."""
     tokens = get_total_tokens(state["messages"])
     prompt = f"QUOTA: {tokens}/{TARGET_CONTEXT_TOKENS}. Review the summaries. If useful, use FetchDetails(index=X). If they are all irrelevant, use SearchWeb(query=...) to try a better search query."
     
     # We bind BOTH tools and force the AI to choose one
-    model = llm.bind_tools([FetchDetails, SearchWeb], tool_choice="required")
+    active_llm = config["configurable"].get("llm", llm)
+    model = active_llm.bind_tools([FetchDetails, SearchWeb], tool_choice="required")
     res = model.invoke([SystemMessage(content=prompt)] + state["messages"])
     return {"messages": [res]}
 
@@ -320,7 +324,7 @@ def node_execute_fetch(state: AgentState):
             
     return {"messages": [ToolMessage(content=content, tool_call_id=tool_call["id"], name="FetchDetails")]}
 
-def node_final(state: AgentState):
+def node_final(state: AgentState, config: RunnableConfig):
     """Node 6: Synthesizes final answer with a stern requirement for length."""
     tokens = get_total_tokens(state["messages"])
     manifest = state.get("source_manifest", {})
@@ -343,7 +347,8 @@ def node_final(state: AgentState):
     try:
         # We invoke the LLM. 
         # NOTE: We do not bind tools here to ensure it focuses purely on writing text.
-        res = llm.invoke([SystemMessage(content=final_instruction)] + state["messages"])
+        active_llm = config["configurable"].get("llm", llm)
+        res = active_llm.invoke([SystemMessage(content=final_instruction)] + state["messages"])
         
         # If the content is literally empty, we return a system message instead 
         # so the router can catch it.
@@ -518,8 +523,6 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
 
     # Re-bind tools to the local LLM for this specific run
     # (The nodes in the graph will now use this thread-local LLM)
-    global llm
-    llm = local_llm 
 
     update_ui(5, f"Initializing {task_name}...")
 
@@ -536,7 +539,7 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
         # Invoke the graph
         final_state = app.invoke(
             {"messages": [SystemMessage(content=time_msg),("user", search_prompt)], "hidden_urls": {}, "source_manifest": {}},
-            {"recursion_limit": 5000} 
+            {"recursion_limit": 5000, "configurable": {"llm": local_llm}}
         )
         
         report_text = final_state["messages"][-1].content
