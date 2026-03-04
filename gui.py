@@ -32,7 +32,7 @@ with st.sidebar:
     
     # 1. ORCHESTRATOR SETTINGS
     with st.expander("🤖 Orchestrator (Master)", expanded=True):
-        o_key = st.text_input("Master API Key", value=saved_prefs.get("o_key", "sk-or-v1-..."), type="password")
+        o_key = st.text_input("Master API Key", value=saved_prefs.get("o_key", ""), type="password")
         o_base = st.text_input("Master Base URL", value=saved_prefs.get("o_base", "https://openrouter.ai/api/v1"))
         o_model = st.text_input("Master Model", value=saved_prefs.get("o_model", "stepfun/step-3.5-flash:free"))
 
@@ -81,10 +81,10 @@ if "loop_count" not in st.session_state:
 
 # STEP 1: INITIAL TOPIC
 if st.session_state.step == "input":
-    st.title("🔮 Research Assistant")
+    st.title("Rock Lab Research Assistant")
     query = st.text_area("What is the research topic?", height=150)
     
-    if st.button("Initialize Sequential Planning", use_container_width=True):
+    if st.button("Initialize Planning", use_container_width=True):
         st.session_state.master = MasterOrchestrator()
         st.session_state.master.update_settings(o_key, o_base, o_model)
         st.session_state.query = query
