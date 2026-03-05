@@ -32,44 +32,41 @@ for key, val in DEFAULTS.items():
 with st.sidebar:
     st.header("⚙️ Global Settings")
     
-    # 1. ORCHESTRATOR SETTINGS
     with st.expander("🤖 Orchestrator (Master)", expanded=True):
-        o_key = st.text_input("Master API Key", value=saved_prefs.get("o_key", ""), type="password")
-        o_base = st.text_input("Master Base URL", value=saved_prefs.get("o_base", "https://openrouter.ai/api/v1"))
-        o_model = st.text_input("Master Model", value=saved_prefs.get("o_model", "stepfun/step-3.5-flash:free"))
+        # Link the input DIRECTLY to session_state using the 'key' parameter
+        st.text_input("Master API Key", key="o_key", type="password")
+        st.text_input("Master Base URL", key="o_base")
+        st.text_input("Master Model", key="o_model")
 
-    # 2. SUB-AGENT SETTINGS
     st.divider()
-    # Checkbox state also saved
-    use_diff = st.checkbox("Independent Sub-Agent Settings", value=saved_prefs.get("use_diff", False))
+    st.checkbox("Independent Sub-Agent Settings", key="use_diff")
     
-    if use_diff:
+    if st.session_state.use_diff:
         with st.expander("🕵️ Sub-Agent Settings", expanded=True):
-            s_key = st.text_input("Agent API Key", value=saved_prefs.get("s_key", "sk-or-v1-..."), type="password")
-            s_base = st.text_input("Agent Base URL", value=saved_prefs.get("s_base", "https://openrouter.ai/api/v1"))
-            s_model = st.text_input("Agent Model", value=saved_prefs.get("s_model", "stepfun/step-3.5-flash:free"))
+            st.text_input("Agent API Key", key="s_key", type="password")
+            st.text_input("Agent Base URL", key="s_base")
+            st.text_input("Agent Model", key="s_model")
     else:
-        s_key, s_base, s_model = o_key, o_base, o_model
+        # Sync keys if "use_diff" is false
+        st.session_state.s_key = st.session_state.o_key
+        st.session_state.s_base = st.session_state.o_base
+        st.session_state.s_model = st.session_state.o_model
 
     with st.expander("🛠️ Limits & Style"):
-        max_agents = st.slider("Max Parallel Agents", 1, 10, saved_prefs.get("max_agents", 4))
-        footer_val = st.text_input("PDF Footer", saved_prefs.get("footer_val", "ROCK LAB PRIVATE LIMITED"))
+        st.slider("Max Parallel Agents", 1, 10, key="max_agents")
+        st.text_input("PDF Footer", key="footer_val")
 
-    # SAVE BUTTON
-    if st.button("💾 Save Configuration", use_container_width=True):
-        current_settings = {
-            "o_key": o_key, "o_base": o_base, "o_model": o_model,
-            "use_diff": use_diff,
-            "s_key": s_key, "s_base": s_base, "s_model": s_model,
-            "max_agents": max_agents, "footer_val": footer_val
-        }
-        save_config(current_settings)
+    # The "Save" button is no longer strictly necessary for persistence 
+    # because 'key' updates session_state instantly, but you can keep it 
+    # to show a success message.
+    if st.button("🚀 Apply Settings", use_container_width=True):
+        st.success("Settings applied to this session!")
 
-    # Construct Agent Config
+    # Construct Agent Config from session state
     agent_config = {
-        "api_key": s_key,
-        "base_url": s_base,
-        "model_name": s_model
+        "api_key": st.session_state.s_key,
+        "base_url": st.session_state.s_base,
+        "model_name": st.session_state.s_model
     }
 
 # ==========================================
