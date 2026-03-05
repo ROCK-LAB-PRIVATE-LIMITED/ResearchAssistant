@@ -34,7 +34,7 @@ with st.sidebar:
     st.header("⚙️ Global Settings")
     
     # 1. ORCHESTRATOR SETTINGS
-    with st.expander("🤖 Orchestrator (Master)", expanded=True):
+    with st.expander("Orchestrator (Master)", expanded=True):
         o_key = st.text_input("Master API Key", value=saved_prefs.get("o_key", ""), type="password")
         o_base = st.text_input("Master Base URL", value=saved_prefs.get("o_base", "https://openrouter.ai/api/v1"))
         o_model = st.text_input("Master Model", value=saved_prefs.get("o_model", "stepfun/step-3.5-flash:free"))
@@ -45,7 +45,7 @@ with st.sidebar:
     use_diff = st.checkbox("Independent Sub-Agent Settings", value=saved_prefs.get("use_diff", False))
     if use_diff and not saved_prefs.get("use_diff", False): saved_prefs["s_key"] = o_key
     if use_diff:
-        with st.expander("🕵️ Sub-Agent Settings", expanded=True):
+        with st.expander("Sub-Agent Settings", expanded=True):
             s_key = st.text_input("Agent API Key", value=saved_prefs.get("s_key", "sk-or-v1-..."), type="password")
             s_base = st.text_input("Agent Base URL", value=saved_prefs.get("s_base", "https://openrouter.ai/api/v1"))
             s_model = st.text_input("Agent Model", value=saved_prefs.get("s_model", "stepfun/step-3.5-flash:free"))
