@@ -8,21 +8,23 @@ st.set_page_config(page_title="Research Assistant", page_icon="🔮", layout="wi
 # ==========================================
 # CONFIGURATION PERSISTENCE
 # ==========================================
-CONFIG_FILE = "config.json"
+# Define your defaults here (or pull from Environment Variables)
+DEFAULTS = {
+    "o_key": os.getenv("MASTER_API_KEY", ""),
+    "o_base": "https://openrouter.ai/api/v1",
+    "o_model": "stepfun/step-3.5-flash:free",
+    "use_diff": False,
+    "s_key": "",
+    "s_base": "https://openrouter.ai/api/v1",
+    "s_model": "stepfun/step-3.5-flash:free",
+    "max_agents": 4,
+    "footer_val": "ROCK LAB PRIVATE LIMITED"
+}
 
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_config(data):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-    st.sidebar.success("Settings saved!")
-
-# Load existing config or set defaults
-saved_prefs = load_config()
+# Initialize session state with defaults if not already set
+for key, val in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
 # ==========================================
 # SIDEBAR: CONFIGURATION
