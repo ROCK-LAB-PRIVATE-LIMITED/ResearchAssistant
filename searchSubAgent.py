@@ -71,75 +71,50 @@ from fake_useragent import UserAgent
 from pathlib import Path
 from markdown import markdown
 try:
-    from weasyprint import HTML, CSS, default_url_fetcher
+    from weasyprint import HTML, CSS
     WEASYPRINT_AVAILABLE = True
 except ImportError:
     WEASYPRINT_AVAILABLE = False
 
-import logging
-
-
-# Setup internal WeasyPrint logging to visible console
-wp_logger = logging.getLogger('weasyprint')
-wp_logger.setLevel(logging.DEBUG)
-if not wp_logger.handlers:
-    wp_logger.addHandler(logging.StreamHandler(sys.stdout))
-
-def custom_url_fetcher(url, *args, **kwargs):
-    """A custom fetcher that helps WeasyPrint reach Google Fonts on locked-down servers."""
-    if url.startswith('http'):
-        # Force a proper User-Agent so Google doesn't block the request
-        kwargs['headers'] = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    return default_url_fetcher(url, *args, **kwargs)
-
 def render_markdown_to_pdf(md_path: str, pdf_path: str):
-    """Renders high-quality PDFs with Google Fonts support and internal debug logging."""
     if not WEASYPRINT_AVAILABLE:
         safe_print(" [PDF ERROR] weasyprint not installed.")
         return
 
-    safe_print(f" [PDF] Starting render for {md_path}...")
-
     try:
-        # 1. Read Markdown and Convert to HTML
+        # 1. Read Markdown
         with open(md_path, "r", encoding="utf-8") as f:
             md_text = f.read()
 
+        # 2. Convert to HTML
         html_text = markdown(
             md_text,
             extensions=["fenced_code", "tables", "toc", "codehilite", "extra"]
         )
 
-        # 2. Locate CSS
+        # 3. Locate CSS
         css_file = Path("styles/style.css")
         if not css_file.exists():
             css_file = Path("style.css")
 
-        # 3. Create HTML object with custom fetcher
-        # base_url is critical for relative assets
-        # url_fetcher is critical for external Google Fonts
-        html = HTML(
-            string=html_text, 
-            base_url=str(Path.cwd()), 
-            url_fetcher=custom_url_fetcher
-        )
+        # 4. Render PDF with Network Access Enabled
+        # We MUST provide a base_url and use the HTML object directly 
+        # to allow Google Font downloads
+        html = HTML(string=html_text, base_url=str(Path.cwd()))
         
         if css_file.exists():
-            safe_print(f" [PDF] Using stylesheet: {css_file}")
             html.write_pdf(
                 pdf_path,
                 stylesheets=[CSS(filename=str(css_file))]
             )
         else:
-            safe_print(" [PDF] Warning: No stylesheet found, using defaults.")
+            safe_print(" [PDF] Warning: style.css not found, rendering with default styles.")
             html.write_pdf(pdf_path)
 
-        safe_print(f" [PDF] SUCCESS: {pdf_path}")
+        safe_print(f" [PDF] Success: {pdf_path}")
 
     except Exception as e:
-        # This will now catch and print internal Pango/WeasyPrint errors
-        err_msg = traceback.format_exc()
-        safe_print(f" [PDF CRITICAL ERROR]: {e}\n{err_msg}")
+        safe_print(f" [PDF ERROR] WeasyPrint failed: {e}")
 # ==========================================
 # 1. SETTINGS & LLM
 # ==========================================
