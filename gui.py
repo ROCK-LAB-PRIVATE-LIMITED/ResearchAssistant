@@ -9,21 +9,23 @@ st.set_page_config(page_title="Research Assistant", page_icon="🔮", layout="wi
 # CONFIGURATION PERSISTENCE
 # ==========================================
 
-CONFIG_FILE = "config.json"
-
 def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_config(data):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-    st.sidebar.success("Settings saved!")
-
-# Load existing config or set defaults
+    # Hardcoded default config
+    return {
+        "o_key": "",
+        "o_base": "https://openrouter.ai/api/v1",
+        "o_model": "stepfun/step-3.5-flash:free",
+        "use_diff": False,
+        "s_key": "",
+        "s_base": "https://openrouter.ai/api/v1",
+        "s_model": "stepfun/step-3.5-flash:free",
+        "max_agents": 4,
+        "footer_val": "ROCK LAB PRIVATE LIMITED"
+    }
 saved_prefs = load_config()
+def save_config(data):
+    # Disabled persistence (UI still works)
+    st.sidebar.success("Settings saved (session only)")
 
 # ==========================================
 # SIDEBAR: CONFIGURATION
@@ -41,7 +43,7 @@ with st.sidebar:
     st.divider()
     # Checkbox state also saved
     use_diff = st.checkbox("Independent Sub-Agent Settings", value=saved_prefs.get("use_diff", False))
-    
+    if use_diff and not saved_prefs.get("use_diff", False): saved_prefs["s_key"] = o_key
     if use_diff:
         with st.expander("🕵️ Sub-Agent Settings", expanded=True):
             s_key = st.text_input("Agent API Key", value=saved_prefs.get("s_key", "sk-or-v1-..."), type="password")
