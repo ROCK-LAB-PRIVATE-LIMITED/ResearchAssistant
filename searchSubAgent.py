@@ -77,49 +77,39 @@ except ImportError:
     WEASYPRINT_AVAILABLE = False
 
 def render_markdown_to_pdf(md_path: str, pdf_path: str):
-    """
-    Uses WeasyPrint to render high-quality PDFs with CSS support.
-    Supports tables, code blocks, and proper typography.
-    """
     if not WEASYPRINT_AVAILABLE:
-        safe_print(" [PDF ERROR] weasyprint not installed. Please run: pip install weasyprint")
+        safe_print(" [PDF ERROR] weasyprint not installed.")
         return
 
     try:
-        md_file = Path(md_path)
-        pdf_file = Path(pdf_path)
-        
         # 1. Read Markdown
         with open(md_path, "r", encoding="utf-8") as f:
             md_text = f.read()
 
-        # 2. Convert to HTML with standard extensions (Tables, Code blocks, etc.)
+        # 2. Convert to HTML
         html_text = markdown(
             md_text,
-            extensions=[
-                "fenced_code",
-                "tables",
-                "toc",
-                "codehilite",
-                "extra" # Adds support for footnotes, etc.
-            ]
+            extensions=["fenced_code", "tables", "toc", "codehilite", "extra"]
         )
 
         # 3. Locate CSS
-        # Looks in the current directory or a 'styles' subfolder
-        css_file = Path("style.css")
+        css_file = Path("styles/style.css")
         if not css_file.exists():
-            css_file = Path("styles/style.css")
+            css_file = Path("style.css")
 
-        # 4. Render
+        # 4. Render PDF with Network Access Enabled
+        # We MUST provide a base_url and use the HTML object directly 
+        # to allow Google Font downloads
+        html = HTML(string=html_text, base_url=str(Path.cwd()))
+        
         if css_file.exists():
-            HTML(string=html_text, base_url=str(Path.cwd())).write_pdf(
-                pdf_file,
+            html.write_pdf(
+                pdf_path,
                 stylesheets=[CSS(filename=str(css_file))]
             )
         else:
             safe_print(" [PDF] Warning: style.css not found, rendering with default styles.")
-            HTML(string=html_text).write_pdf(pdf_file)
+            html.write_pdf(pdf_path)
 
         safe_print(f" [PDF] Success: {pdf_path}")
 

@@ -1,24 +1,4 @@
-@font-face {
-  font-family: "Michroma";
-  src: url("fonts/Michroma-Regular.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Space Grotesk";
-  src: url("fonts/SpaceGrotesk-Regular.ttf") format("truetype");
-  font-weight: normal;
-}
-
-@font-face {
-  font-family: "Space Grotesk";
-  src: url("fonts/SpaceGrotesk-Bold.ttf") format("truetype");
-  font-weight: bold;
-}
-
-@font-face {
-  font-family: "Space Mono";
-  src: url("fonts/SpaceMono-Regular.ttf") format("truetype");
-}
+@import url('https://fonts.googleapis.com/css2?family=Michroma&family=Space+Grotesk:wght@300;400;700&family=Space+Mono&display=swap');
 
 body {
   font-family: "Space Grotesk", sans-serif;
