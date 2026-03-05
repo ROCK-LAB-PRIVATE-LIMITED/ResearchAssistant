@@ -70,10 +70,14 @@ from fake_useragent import UserAgent
 # New robust PDF imports
 from pathlib import Path
 from markdown import markdown
-
+try:
+    from weasyprint import HTML, CSS, default_url_fetcher
+    WEASYPRINT_AVAILABLE = True
+except ImportError:
+    WEASYPRINT_AVAILABLE = False
 
 import logging
-from weasyprint import HTML, CSS, default_url_fetcher
+
 
 # Setup internal WeasyPrint logging to visible console
 wp_logger = logging.getLogger('weasyprint')
