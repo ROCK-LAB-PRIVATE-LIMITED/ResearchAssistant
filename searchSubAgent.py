@@ -14,28 +14,33 @@ import datetime
 thread_context = threading.local()
 
 def safe_print(text):
-    """Prints to console and appends to a shared log file for UI tracking."""
+    """Prints to console and appends to a project-specific log file for UI tracking."""
     if not text:
         return
     
-    # Identify the current agent from thread-local storage
+    # Identify the current agent and log path from thread-local storage
     task_id = getattr(thread_context, 'task_name', 'System')
+    log_path = getattr(thread_context, 'log_path', "research_status.log")
     
-    # 1. Console Output
+    # 1. Console Output (Maintaining your original encoding-safe logic)
     try:
+        # sys.stdout.encoding check prevents crashes on certain terminals
         encoded_text = str(text).encode(sys.stdout.encoding, errors='replace').decode(sys.stdout.encoding)
         print(f"[{task_id}] {encoded_text}")
     except:
-        print(f"[{task_id}] {text}")
+        try:
+            print(f"[{task_id}] {text}")
+        except:
+            pass
 
-    # 2. File Output (The "Bridge")
-    # We use 'a' (append) which is atomic on most OSs for small writes
+    # 2. File Output (The Bridge - now using the project-specific path)
     try:
-        with open("research_status.log", "a", encoding="utf-8") as f:
+        with open(log_path, "a", encoding="utf-8") as f:
             # Format: AgentName ::: Message
             f.write(f"{task_id} ::: {text}\n")
     except:
-        pass # Skip if file is locked
+        pass
+        
 def sanitize_filename(name):
     # Remove characters that are illegal in Windows filenames
     # < > : " / \ | ? *
@@ -226,13 +231,13 @@ class FinalResponse(BaseModel):
 def node_decide(state: AgentState):
     tokens = get_total_tokens(state["messages"])
     
-    # FORCE RESEARCH UNTIL QUOTA
+    # Use the thread-local LLM
     if tokens < TARGET_CONTEXT_TOKENS:
         prompt = f"QUOTA: {tokens}/{TARGET_CONTEXT_TOKENS}. You MUST use SearchWeb for more info."
-        model = llm.bind_tools([SearchWeb], tool_choice="SearchWeb")
+        model = thread_context.llm.bind_tools([SearchWeb], tool_choice="SearchWeb")
     else:
         prompt = f"QUOTA MET: {tokens}/{TARGET_CONTEXT_TOKENS}. Use FinalResponse now."
-        model = llm.bind_tools([FinalResponse], tool_choice="FinalResponse")
+        model = thread_context.llm.bind_tools([FinalResponse], tool_choice="FinalResponse")
 
     res = model.invoke([SystemMessage(content=prompt)] + state["messages"])
     return {"messages": [res]}
@@ -269,12 +274,11 @@ def node_execute_search(state: AgentState):
     }
 
 def node_agent_select(state: AgentState):
-    """Node: AI chooses to either fetch a result OR start a new search if snippets are bad."""
     tokens = get_total_tokens(state["messages"])
     prompt = f"QUOTA: {tokens}/{TARGET_CONTEXT_TOKENS}. Review the summaries. If useful, use FetchDetails(index=X). If they are all irrelevant, use SearchWeb(query=...) to try a better search query."
     
-    # We bind BOTH tools and force the AI to choose one
-    model = llm.bind_tools([FetchDetails, SearchWeb], tool_choice="required")
+    # Use the thread-local LLM
+    model = thread_context.llm.bind_tools([FetchDetails, SearchWeb], tool_choice="required")
     res = model.invoke([SystemMessage(content=prompt)] + state["messages"])
     return {"messages": [res]}
 
@@ -321,13 +325,11 @@ def node_execute_fetch(state: AgentState):
     return {"messages": [ToolMessage(content=content, tool_call_id=tool_call["id"], name="FetchDetails")]}
 
 def node_final(state: AgentState):
-    """Node 6: Synthesizes final answer with a stern requirement for length."""
     tokens = get_total_tokens(state["messages"])
     manifest = state.get("source_manifest", {})
     safe_print(f" [TARGET REACHED] {tokens} tokens. Synthesizing final answer...")
     reference_table = "\n".join([f"[Source {i}]: {title}" for i, title in manifest.items()])
-    # We use a much more aggressive prompt to ensure the model doesn't get 'lazy'
-    # with a large context.
+    
     final_instruction = f"""
     CITATION LOOKUP TABLE (Use these numbers):
     {reference_table}
@@ -341,18 +343,14 @@ def node_final(state: AgentState):
     """
     
     try:
-        # We invoke the LLM. 
-        # NOTE: We do not bind tools here to ensure it focuses purely on writing text.
-        res = llm.invoke([SystemMessage(content=final_instruction)] + state["messages"])
-        
-        # If the content is literally empty, we return a system message instead 
-        # so the router can catch it.
+        # Use the thread-local LLM
+        res = thread_context.llm.invoke([SystemMessage(content=final_instruction)] + state["messages"])
         if not res.content or len(res.content.strip()) < FINAL_ANSWER_MIN_LENGTH:
             return {"messages": [AIMessage(content="RETRY_REQUIRED: Final answer was blank or too short.")]}
-            
         return {"messages": [res]}
     except Exception as e:
         return {"messages": [AIMessage(content=f"FINAL_SYNTH_ERROR: {str(e)}")]}
+
 
 def route_after_final(state: AgentState):
     """The Gatekeeper: Only allows the graph to END if the answer is valid."""
@@ -489,37 +487,30 @@ import traceback
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, st_ctx=None, config=None):
-    # Set the thread-local name so safe_print knows who is talking
+    # SET THREAD-LOCAL CONTEXT (Point 1 & 2)
     thread_context.task_name = task_name 
-    # 1. ATTACH CONTEXT
-    if st_ctx:
-        try:
-            add_script_run_ctx(st_ctx)
-        except Exception:
-            pass # Fallback if context attachment fails
-
-    def update_ui(progress, text):
-        """Helper to update UI safely."""
-        if st_placeholder:
-            try:
-                st_placeholder.progress(progress, text=text)
-            except Exception:
-                # If Streamlit UI update fails, we just log to console and keep going
-                safe_print(f"[{task_name}] {text}")
-
-    # 2. LOCAL LLM INITIALIZATION (Ensures correct API keys)
-    from langchain_openai import ChatOpenAI
-    local_llm = ChatOpenAI(
+    thread_context.log_path = os.path.join(output_dir, "research_status.log")
+    
+    # Initialize a fresh LLM instance specifically for this thread (Point 1)
+    thread_context.llm = ChatOpenAI(
         model=config.get("model_name", MODEL_NAME),
         api_key=config.get("api_key", OPENROUTER_API_KEY),
         base_url=config.get("base_url", BASE_URL),
         temperature=0
     )
 
-    # Re-bind tools to the local LLM for this specific run
-    # (The nodes in the graph will now use this thread-local LLM)
-    global llm
-    llm = local_llm 
+    if st_ctx:
+        try:
+            add_script_run_ctx(st_ctx)
+        except Exception:
+            pass
+
+    def update_ui(progress, text):
+        if st_placeholder:
+            try:
+                st_placeholder.progress(progress, text=text)
+            except Exception:
+                safe_print(f"[{task_name}] {text}")
 
     update_ui(5, f"Initializing {task_name}...")
 
@@ -533,7 +524,7 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
     try:
         update_ui(15, f"🔍 {task_name}: Researching...")
         
-        # Invoke the graph
+        # Invoke the graph (it will use the nodes above which reference thread_context.llm)
         final_state = app.invoke(
             {"messages": [SystemMessage(content=time_msg),("user", search_prompt)], "hidden_urls": {}, "source_manifest": {}},
             {"recursion_limit": 5000} 
@@ -542,7 +533,6 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
         report_text = final_state["messages"][-1].content
         url_map = final_state.get("hidden_urls", {})
 
-        # 2. CONVERT TAGS TO LINKS
         def inject_links(match):
             idx = int(match.group(1))
             url = url_map.get(idx)
@@ -550,7 +540,6 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
 
         final_message = re.sub(r"\[Source (\d+)\]", inject_links, report_text)
         
-        # 3. SAVE
         safe_print(f" [POST-PROCESS] Linked {len(url_map)} sources in final Markdown.")
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(final_message)

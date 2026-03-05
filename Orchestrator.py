@@ -139,77 +139,67 @@ class MasterOrchestrator:
     def execute_subagents(self, tasks: List[Dict], output_dir=".", placeholders=None, config=None):
         if not tasks:
             return []
-
-        import time
-        import re
-
-        # 1. Initialize Log
-        with open("research_status.log", "w", encoding="utf-8") as f:
+    
+        # UNIQUE LOG FILE PER PROJECT (Point 2)
+        # We place the log inside the specific project folder to avoid collisions between users/sessions
+        status_log_path = os.path.join(output_dir, "research_status.log")
+        
+        with open(status_log_path, "w", encoding="utf-8") as f:
             f.write("") 
-
+    
         safe_print(f"\n[ORCHESTRATOR] Dispatching {len(tasks)} sub-agents...")
         ctx = get_script_run_ctx()
         results = []
         
-        # 2. Setup Persistent UI Elements
-        # We create a dictionary to hold the status object and progress bar for each agent
         ui_elements = {}
         for i, t in enumerate(tasks):
             name = t['task_name']
             if placeholders and i < len(placeholders):
                 with placeholders[i]:
                     st.markdown(f"### ✨ {name}")
-                    # This creates the "blue box" with the spinning ring
                     status_obj = st.status(f"Initializing {name}...", state="running")
                     progress_bar = st.progress(0)
                     ui_elements[name] = {"status": status_obj, "progress": progress_bar}
-
+    
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
             future_to_task = {
                 executor.submit(run_subagent, t['search_prompt'], t['task_name'], output_dir, None, ctx, config): t['task_name'] 
                 for t in tasks
             }
-
-            # 3. LIVE MONITORING LOOP
+    
+            # LIVE MONITORING LOOP
             while True:
                 all_done = all(f.done() for f in future_to_task.keys())
                 
                 try:
-                    with open("research_status.log", "r", encoding="utf-8") as f:
+                    # Read from the project-specific log file
+                    with open(status_log_path, "r", encoding="utf-8") as f:
                         lines = f.readlines()
                     
-                    # Track latest status per agent
                     latest_updates = {}
                     for line in lines:
                         if " ::: " in line:
                             agent, msg = line.split(" ::: ", 1)
                             latest_updates[agent.strip()] = msg.strip()
-
-                    # Update Persistent UI
+    
                     for name, ui in ui_elements.items():
                         if name in latest_updates:
                             msg = latest_updates[name]
-                            
-                            # Update the text inside the status box
                             ui["status"].update(label=f"{name}: {msg}")
-                            
-                            # Parse Progress [current/total]
                             match = re.search(r"\[(\d+)/(\d+)\]", msg)
                             if match:
                                 curr, total = map(int, match.groups())
                                 ui["progress"].progress(min(curr / total, 1.0))
                 except:
                     pass 
-
+    
                 if all_done:
-                    # Mark all status boxes as complete
                     for name, ui in ui_elements.items():
                         ui["status"].update(label=f"✅ {name}: Completed", state="complete")
                         ui["progress"].progress(1.0)
                     break
                 time.sleep(1)
-
-            # 4. COLLECT RESULTS
+    
             for future in future_to_task:
                 task_name = future_to_task[future]
                 try:
@@ -221,8 +211,9 @@ class MasterOrchestrator:
                         ui_elements[task_name]["status"].update(label=f"❌ {task_name}: Failed", state="error")
                     safe_print(f" [EXCEPTION] {task_name}: {exc}")
         
-        if os.path.exists("research_status.log"):
-            os.remove("research_status.log")
+        # Cleanup the project-specific log
+        if os.path.exists(status_log_path):
+            os.remove(status_log_path)
             
         return results
 
