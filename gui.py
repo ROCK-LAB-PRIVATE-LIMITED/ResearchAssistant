@@ -6,63 +6,62 @@ import json
 st.set_page_config(page_title="Research Assistant", page_icon="🔮", layout="wide")
 
 # ==========================================
-# CONFIGURATION PERSISTENCE
+# 1. SESSION INITIALIZATION (PRIVATE & SYNCED)
 # ==========================================
-# Define your defaults here (or pull from Environment Variables)
-DEFAULTS = {
-    "o_key": os.getenv("MASTER_API_KEY", ""),
-    "o_base": "https://openrouter.ai/api/v1",
-    "o_model": "stepfun/step-3.5-flash:free",
-    "use_diff": False,
-    "s_key": "",
-    "s_base": "https://openrouter.ai/api/v1",
-    "s_model": "stepfun/step-3.5-flash:free",
-    "max_agents": 4,
-    "footer_val": "ROCK LAB PRIVATE LIMITED"
-}
+# Defaults for a fresh session
+if "o_key" not in st.session_state:
+    st.session_state.o_key = ""
+if "o_base" not in st.session_state:
+    st.session_state.o_base = "https://openrouter.ai/api/v1"
+if "o_model" not in st.session_state:
+    st.session_state.o_model = "stepfun/step-3.5-flash:free"
 
-# Initialize session state with defaults if not already set
-for key, val in DEFAULTS.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
+if "use_diff" not in st.session_state:
+    st.session_state.use_diff = False
+
+# CRITICAL SYNC LOGIC:
+# If "Independent Settings" is NOT checked, force sub-agent keys to match master keys.
+# This ensures that when the user clicks the checkbox, the fields are ALREADY populated.
+if not st.session_state.use_diff:
+    st.session_state.s_key = st.session_state.o_key
+    st.session_state.s_base = st.session_state.o_base
+    st.session_state.s_model = st.session_state.o_model
+elif "s_key" not in st.session_state:
+    # Fallback initialization for sub-agent keys
+    st.session_state.s_key = st.session_state.o_key
+    st.session_state.s_base = st.session_state.o_base
+    st.session_state.s_model = st.session_state.o_model
 
 # ==========================================
-# SIDEBAR: CONFIGURATION
+# 2. SIDEBAR: CONFIGURATION
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Global Settings")
     
+    # 1. ORCHESTRATOR SETTINGS
     with st.expander("🤖 Orchestrator (Master)", expanded=True):
-        # Link the input DIRECTLY to session_state using the 'key' parameter
         st.text_input("Master API Key", key="o_key", type="password")
         st.text_input("Master Base URL", key="o_base")
         st.text_input("Master Model", key="o_model")
 
     st.divider()
+    
+    # Toggle for independent settings
     st.checkbox("Independent Sub-Agent Settings", key="use_diff")
     
     if st.session_state.use_diff:
         with st.expander("🕵️ Sub-Agent Settings", expanded=True):
+            # Because of the sync logic above, these will default to the Master values
             st.text_input("Agent API Key", key="s_key", type="password")
             st.text_input("Agent Base URL", key="s_base")
             st.text_input("Agent Model", key="s_model")
-    else:
-        # Sync keys if "use_diff" is false
-        st.session_state.s_key = st.session_state.o_key
-        st.session_state.s_base = st.session_state.o_base
-        st.session_state.s_model = st.session_state.o_model
-
+    
     with st.expander("🛠️ Limits & Style"):
+        # We use a separate key for UI and storage to avoid sync loops
         st.slider("Max Parallel Agents", 1, 10, key="max_agents")
-        st.text_input("PDF Footer", key="footer_val")
+        st.text_input("PDF Footer", key="footer_val", value="ROCK LAB PRIVATE LIMITED")
 
-    # The "Save" button is no longer strictly necessary for persistence 
-    # because 'key' updates session_state instantly, but you can keep it 
-    # to show a success message.
-    if st.button("🚀 Apply Settings", use_container_width=True):
-        st.success("Settings applied to this session!")
-
-    # Construct Agent Config from session state
+    # Construct Agent Config (This is what gets passed to the Orchestrator)
     agent_config = {
         "api_key": st.session_state.s_key,
         "base_url": st.session_state.s_base,
