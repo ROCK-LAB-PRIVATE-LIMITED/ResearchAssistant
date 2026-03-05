@@ -54,7 +54,8 @@ from typing import TypedDict, Annotated, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, ToolMessage, AIMessage, BaseMessage
+from langchain_core.messages import SystemMessage, ToolMessage, AIMessage, BaseMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -223,21 +224,23 @@ class FinalResponse(BaseModel):
 # ==========================================
 # 4. PROTECTED NODES (No-Crash Pattern)
 # ==========================================
-
+def node_decide(state: AgentState, config: RunnableConfig):
 def node_decide(state: AgentState, config: RunnableConfig):
     tokens = get_total_tokens(state["messages"])
     
     # FORCE RESEARCH UNTIL QUOTA
-    if tokens < TARGET_CONTEXT_TOKENS:
         prompt = f"QUOTA: {tokens}/{TARGET_CONTEXT_TOKENS}. You MUST use SearchWeb for more info."
         active_llm = config["configurable"].get("llm", llm)
         model = active_llm.bind_tools([SearchWeb], tool_choice="SearchWeb")
-    else:
+        active_llm = config["configurable"].get("llm", llm)
+        prompt = f"QUOTA MET: {tokens}/{TARGET_CONTEXT_TOKENS}. Use FinalResponse now."
+        active_llm = config["configurable"].get("llm", llm)
+        model = active_llm.bind_tools([FinalResponse], tool_choice="FinalResponse")
         prompt = f"QUOTA MET: {tokens}/{TARGET_CONTEXT_TOKENS}. Use FinalResponse now."
         active_llm = config["configurable"].get("llm", llm)
         model = active_llm.bind_tools([FinalResponse], tool_choice="FinalResponse")
 
-    res = model.invoke([SystemMessage(content=prompt)] + state["messages"])
+    res = model.invoke([SystemMessage(content=prompt), HumanMessage(content="")] + state["messages"])
     return {"messages": [res]}
 
 def node_execute_search(state: AgentState):
@@ -279,7 +282,7 @@ def node_agent_select(state: AgentState, config: RunnableConfig):
     # We bind BOTH tools and force the AI to choose one
     active_llm = config["configurable"].get("llm", llm)
     model = active_llm.bind_tools([FetchDetails, SearchWeb], tool_choice="required")
-    res = model.invoke([SystemMessage(content=prompt)] + state["messages"])
+    res = model.invoke([SystemMessage(content=prompt), HumanMessage(content="")] + state["messages"])
     return {"messages": [res]}
 
 def node_execute_fetch(state: AgentState):
@@ -348,7 +351,7 @@ def node_final(state: AgentState, config: RunnableConfig):
         # We invoke the LLM. 
         # NOTE: We do not bind tools here to ensure it focuses purely on writing text.
         active_llm = config["configurable"].get("llm", llm)
-        res = active_llm.invoke([SystemMessage(content=final_instruction)] + state["messages"])
+        res = active_llm.invoke([SystemMessage(content=final_instruction), HumanMessage(content="")] + state["messages"])
         
         # If the content is literally empty, we return a system message instead 
         # so the router can catch it.
@@ -518,9 +521,8 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
         model=config.get("model_name", MODEL_NAME),
         api_key=config.get("api_key", OPENROUTER_API_KEY),
         base_url=config.get("base_url", BASE_URL),
-        temperature=0
-    )
-
+    # The nodes in the graph will now use the LLM passed via config
+    # Re-bind tools to the local LLM for this specific run
     # Re-bind tools to the local LLM for this specific run
     # (The nodes in the graph will now use this thread-local LLM)
 
@@ -540,6 +542,7 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
         final_state = app.invoke(
             {"messages": [SystemMessage(content=time_msg),("user", search_prompt)], "hidden_urls": {}, "source_manifest": {}},
             {"recursion_limit": 5000, "configurable": {"llm": local_llm}}
+        )
         )
         
         report_text = final_state["messages"][-1].content
