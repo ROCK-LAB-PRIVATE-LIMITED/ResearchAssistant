@@ -4,7 +4,7 @@ import json
 from typing import List, Dict
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 import datetime
 # Import from your existing file
 from searchSubAgent import run_subagent, safe_print, sanitize_filename, render_markdown_to_pdf
@@ -62,7 +62,7 @@ class MasterOrchestrator:
         """Generates a professional project title based on the topic."""
         model_with_tools = self.llm.bind_tools([ProjectName], tool_choice="ProjectName")
         prompt = f"Initial Query: {query}\nClarifications: {clarifications}\nGenerate a short, professional project title to be used as a filename."
-        res = model_with_tools.invoke([SystemMessage(content=prompt)])
+        res = model_with_tools.invoke([SystemMessage(content=prompt), HumanMessage(content="")])
         if res.tool_calls:
             return res.tool_calls[0]["args"].get("title", "Research_Project")
         return "Research_Project"
@@ -79,7 +79,7 @@ class MasterOrchestrator:
         Based on the research context, ask ONE specific clarification question to narrow down the next search.
         Keep it brief and technical.
         """
-        res = self.llm.invoke([SystemMessage(content=prompt)])
+        res = self.llm.invoke([SystemMessage(content=prompt), HumanMessage(content="")])
         return res.content
 
     def quick_search(self, query: str):
@@ -98,7 +98,7 @@ class MasterOrchestrator:
         model_with_tools = self.llm.bind_tools([ClarificationQuestions], tool_choice="ClarificationQuestions")
         time_context = get_gmt_string()
         prompt = f"{time_context}\nUser wants research on: {initial_query}. Generate 1-3 clarification questions to narrow the scope."
-        res = model_with_tools.invoke([SystemMessage(content=prompt)])
+        res = model_with_tools.invoke([SystemMessage(content=prompt), HumanMessage(content="")])
         
         if res.tool_calls:
             return res.tool_calls[0]["args"].get("questions", [])
@@ -122,7 +122,7 @@ class MasterOrchestrator:
         # RETRY LOOP (3 Attempts)
         for attempt in range(3):
             try:
-                res = model_with_tools.invoke([SystemMessage(content=plan_prompt)])
+                res = model_with_tools.invoke([SystemMessage(content=plan_prompt), HumanMessage(content="")])
                 tasks = []
                 if res.tool_calls:
                     tasks = res.tool_calls[0]["args"].get("tasks", [])
@@ -243,7 +243,7 @@ class MasterOrchestrator:
         """
         
         # Direct text completion
-        final_report = self.llm.invoke([SystemMessage(content=synthesis_prompt)]).content
+        final_report = self.llm.invoke([SystemMessage(content=synthesis_prompt), HumanMessage(content="")]).content
         return final_report
 
     def update_settings(self, api_key: str, base_url: str, model_name: str):
