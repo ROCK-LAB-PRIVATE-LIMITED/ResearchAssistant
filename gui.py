@@ -6,62 +6,61 @@ import json
 st.set_page_config(page_title="Research Assistant", page_icon="🔮", layout="wide")
 
 # ==========================================
-# 1. SESSION INITIALIZATION (PRIVATE & SYNCED)
+# 1. SECURE SESSION INITIALIZATION
 # ==========================================
-# Defaults for a fresh session
+# This only runs once per user session. No shared files.
 if "o_key" not in st.session_state:
-    st.session_state.o_key = ""
-if "o_base" not in st.session_state:
-    st.session_state.o_base = "https://openrouter.ai/api/v1"
-if "o_model" not in st.session_state:
-    st.session_state.o_model = "stepfun/step-3.5-flash:free"
+    st.session_state.update({
+        "o_key": "", 
+        "o_base": "https://openrouter.ai/api/v1", 
+        "o_model": "stepfun/step-3.5-flash:free",
+        "s_key": "", 
+        "s_base": "https://openrouter.ai/api/v1", 
+        "s_model": "stepfun/step-3.5-flash:free",
+        "use_diff": False,
+        "max_agents": 4,
+        "footer_val": "ROCK LAB PRIVATE LIMITED"
+    })
 
-if "use_diff" not in st.session_state:
-    st.session_state.use_diff = False
-
-# CRITICAL SYNC LOGIC:
-# If "Independent Settings" is NOT checked, force sub-agent keys to match master keys.
-# This ensures that when the user clicks the checkbox, the fields are ALREADY populated.
-if not st.session_state.use_diff:
-    st.session_state.s_key = st.session_state.o_key
-    st.session_state.s_base = st.session_state.o_base
-    st.session_state.s_model = st.session_state.o_model
-elif "s_key" not in st.session_state:
-    # Fallback initialization for sub-agent keys
-    st.session_state.s_key = st.session_state.o_key
-    st.session_state.s_base = st.session_state.o_base
-    st.session_state.s_model = st.session_state.o_model
+# CALLBACK: This function runs immediately when you type in the Master boxes
+def sync_master_to_sub():
+    if not st.session_state.use_diff:
+        st.session_state.s_key = st.session_state.o_key
+        st.session_state.s_base = st.session_state.o_base
+        st.session_state.s_model = st.session_state.o_model
 
 # ==========================================
-# 2. SIDEBAR: CONFIGURATION
+# 2. SIDEBAR UI
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Global Settings")
     
-    # 1. ORCHESTRATOR SETTINGS
     with st.expander("🤖 Orchestrator (Master)", expanded=True):
-        st.text_input("Master API Key", key="o_key", type="password")
-        st.text_input("Master Base URL", key="o_base")
-        st.text_input("Master Model", key="o_model")
+        # We use on_change to force the Sub-Agent settings to update live
+        st.text_input("Master API Key", key="o_key", type="password", on_change=sync_master_to_sub)
+        st.text_input("Master Base URL", key="o_base", on_change=sync_master_to_sub)
+        st.text_input("Master Model", key="o_model", on_change=sync_master_to_sub)
 
     st.divider()
     
     # Toggle for independent settings
+    # When this is turned ON, the sync_master_to_sub function will stop overwriting s_key
     st.checkbox("Independent Sub-Agent Settings", key="use_diff")
     
     if st.session_state.use_diff:
         with st.expander("🕵️ Sub-Agent Settings", expanded=True):
-            # Because of the sync logic above, these will default to the Master values
             st.text_input("Agent API Key", key="s_key", type="password")
             st.text_input("Agent Base URL", key="s_base")
             st.text_input("Agent Model", key="s_model")
-    
-    with st.expander("🛠️ Limits & Style"):
-        # We use a separate key for UI and storage to avoid sync loops
-        st.slider("Max Parallel Agents", 1, 10, key="max_agents")
-        st.text_input("PDF Footer", key="footer_val", value="ROCK LAB PRIVATE LIMITED")
+    else:
+        # Visual confirmation that they are synced
+        st.info("Sub-Agents are using Master settings.")
 
-    # Construct Agent Config (This is what gets passed to the Orchestrator)
+    with st.expander("🛠️ Limits & Style"):
+        st.slider("Max Parallel Agents", 1, 10, key="max_agents")
+        st.text_input("PDF Footer", key="footer_val")
+
+    # Important: This dictionary is what gets passed to the background tasks
     agent_config = {
         "api_key": st.session_state.s_key,
         "base_url": st.session_state.s_base,
