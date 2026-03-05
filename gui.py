@@ -6,61 +6,73 @@ import json
 st.set_page_config(page_title="Research Assistant", page_icon="🔮", layout="wide")
 
 # ==========================================
-# 1. SECURE SESSION INITIALIZATION
+# 1. DEFINE HARDCODED DEFAULTS
 # ==========================================
-# This only runs once per user session. No shared files.
-if "o_key" not in st.session_state:
-    st.session_state.update({
-        "o_key": "", 
-        "o_base": "https://openrouter.ai/api/v1", 
-        "o_model": "stepfun/step-3.5-flash:free",
-        "s_key": "", 
-        "s_base": "https://openrouter.ai/api/v1", 
-        "s_model": "stepfun/step-3.5-flash:free",
-        "use_diff": False,
-        "max_agents": 4,
-        "footer_val": "ROCK LAB PRIVATE LIMITED"
-    })
+DEFAULT_KEY = "" # Leave empty for privacy, or put a default here
+DEFAULT_BASE = "https://openrouter.ai/api/v1"
+DEFAULT_MODEL = "stepfun/step-3.5-flash:free"
 
-# CALLBACK: This function runs immediately when you type in the Master boxes
-def sync_master_to_sub():
-    if not st.session_state.use_diff:
+# ==========================================
+# 2. INITIALIZE SESSION STATE (Runs once per user)
+# ==========================================
+# This ensures every user starts with the hardcoded defaults in their own private RAM
+if "o_key" not in st.session_state:
+    st.session_state.o_key = DEFAULT_KEY
+if "o_base" not in st.session_state:
+    st.session_state.o_base = DEFAULT_BASE
+if "o_model" not in st.session_state:
+    st.session_state.o_model = DEFAULT_MODEL
+
+if "use_diff" not in st.session_state:
+    st.session_state.use_diff = False
+
+# This logic handles the "Sync": If independent settings are OFF, 
+# it pushes Master values into the Sub-Agent values every time the app reruns.
+if not st.session_state.use_diff:
+    st.session_state.s_key = st.session_state.o_key
+    st.session_state.s_base = st.session_state.o_base
+    st.session_state.s_model = st.session_state.o_model
+else:
+    # If they just turned ON "Independent Settings", ensure they aren't blank
+    if "s_key" not in st.session_state or st.session_state.s_key == "":
         st.session_state.s_key = st.session_state.o_key
         st.session_state.s_base = st.session_state.o_base
         st.session_state.s_model = st.session_state.o_model
 
 # ==========================================
-# 2. SIDEBAR UI
+# 3. SIDEBAR UI
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Global Settings")
     
     with st.expander("🤖 Orchestrator (Master)", expanded=True):
-        # We use on_change to force the Sub-Agent settings to update live
-        st.text_input("Master API Key", key="o_key", type="password", on_change=sync_master_to_sub)
-        st.text_input("Master Base URL", key="o_base", on_change=sync_master_to_sub)
-        st.text_input("Master Model", key="o_model", on_change=sync_master_to_sub)
+        # We don't need 'value=' because we set 'st.session_state.o_key' above
+        st.text_input("Master API Key", key="o_key", type="password")
+        st.text_input("Master Base URL", key="o_base")
+        st.text_input("Master Model", key="o_model")
 
     st.divider()
     
-    # Toggle for independent settings
-    # When this is turned ON, the sync_master_to_sub function will stop overwriting s_key
     st.checkbox("Independent Sub-Agent Settings", key="use_diff")
     
-    if st.session_state.use_diff:
-        with st.expander("🕵️ Sub-Agent Settings", expanded=True):
+    # This section is what you were seeing as "Blank"
+    with st.expander("🕵️ Sub-Agent Settings", expanded=True):
+        if st.session_state.use_diff:
+            # When independent is ON, user can type here
             st.text_input("Agent API Key", key="s_key", type="password")
             st.text_input("Agent Base URL", key="s_base")
             st.text_input("Agent Model", key="s_model")
-    else:
-        # Visual confirmation that they are synced
-        st.info("Sub-Agents are using Master settings.")
+        else:
+            # When independent is OFF, we show the values but they match Master
+            st.info("Currently using Master Settings")
+            st.caption(f"Model: {st.session_state.s_model}")
+            st.caption(f"Base: {st.session_state.s_base}")
 
     with st.expander("🛠️ Limits & Style"):
-        st.slider("Max Parallel Agents", 1, 10, key="max_agents")
-        st.text_input("PDF Footer", key="footer_val")
+        st.slider("Max Parallel Agents", 1, 10, key="max_agents", value=4)
+        st.text_input("PDF Footer", key="footer_val", value="ROCK LAB PRIVATE LIMITED")
 
-    # Important: This dictionary is what gets passed to the background tasks
+    # FINAL CONFIG: This is what gets passed to the research agents
     agent_config = {
         "api_key": st.session_state.s_key,
         "base_url": st.session_state.s_base,
