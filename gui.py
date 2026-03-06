@@ -52,24 +52,28 @@ with st.sidebar:
     else:
         s_key, s_base, s_model = o_key, o_base, o_model
     
+    # --- VISION / ILLUSTRATOR SETTINGS ---
+    # Initializing with a safe default so the app doesn't crash if use_vision is False
     vision_config = {"enabled": False} 
 
-    use_vision = st.checkbox("Enable Image Search & Insertion", value=False)
+    use_vision = st.checkbox("Enable Illustrations", value=False)
     
     if use_vision:
         with st.expander("👁️ Illustrator", expanded=True):            
-            v_key = st.text_input("Vision API Key", value="", type="password", help="Needs a vision-capable model")
+            # Autodefaults to Master Key (o_key) if vision is enabled
+            v_key = st.text_input("Vision API Key", value=o_key, type="password", help="Needs a vision-capable model")
             v_base = st.text_input("Vision Base URL", value="https://openrouter.ai/api/v1")
             v_model = st.text_input("Vision Model", value="nvidia/nemotron-nano-12b-v2-vl:free")
-        
-            # 2. Overwrite only if enabled and key is present
+    
+            # Overwrite config only if key is actually provided
             vision_config = {
-                "enabled": len(v_key) > 5, 
+                "enabled": use_vision and len(v_key) > 5, 
                 "api_key": v_key,
                 "base_url": v_base,
                 "model_name": v_model
             }
     
+    # 3. LIMITS & STYLE
     with st.expander("🛠️ Limits & Style"):
         max_agents = st.slider("Max Parallel Agents", 1, 10, saved_prefs.get("max_agents", 4))
         footer_val = st.text_input("PDF Footer", saved_prefs.get("footer_val", "ROCK LAB PRIVATE LIMITED"))
