@@ -3,6 +3,7 @@ import os, datetime, base64
 from Orchestrator import MasterOrchestrator, render_markdown_to_pdf
 from searchSubAgent import sanitize_filename
 import json
+import uuid, datetime
 st.set_page_config(page_title="Research Assistant", page_icon="🔮", layout="wide")
 
 # ==========================================
@@ -189,7 +190,8 @@ elif st.session_state.step == "research":
             project_title = sanitize_filename(raw_title)
             #ts = datetime.datetime.now().strftime("%H%M") # Still keep short TS to avoid collisions
             st.session_state.project_title = project_title
-            st.session_state.folder = f"{project_title}"
+            st.session_state.folder = f"{project_title}_{datetime.datetime.now().strftime('%y%m%d_%H%M')}_{uuid.uuid4().hex[:6]}"
+            #st.session_state.folder = f"{project_title}" # Anti collision
             os.makedirs(st.session_state.folder, exist_ok=True)
 
     if "final_report" not in st.session_state:

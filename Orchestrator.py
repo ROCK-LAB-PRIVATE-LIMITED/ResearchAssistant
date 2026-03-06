@@ -144,8 +144,12 @@ class MasterOrchestrator:
     def execute_subagents(self, tasks: List[Dict], output_dir=".", placeholders=None, config=None):
         if not tasks:
             return []
-    
-        # UNIQUE LOG FILE PER PROJECT (Point 2)
+        # NEW: Prepend Annexure labels based on original task order (A, B, C...)
+        for i, t in enumerate(tasks):
+            letter = chr(65 + i) # 0 -> A, 1 -> B, etc.
+            if not t['task_name'].startswith("ANNEXURE"):
+                t['task_name'] = f"ANNEXURE {letter} - {t['task_name']}"
+        # UNIQUE LOG FILE PER PROJECT
         # We place the log inside the specific project folder to avoid collisions between users/sessions
         status_log_path = os.path.join(output_dir, "research_status.log")
         
@@ -227,7 +231,7 @@ class MasterOrchestrator:
         
         combined_context = ""
         for r in all_results:
-            combined_context += f"\n\n--- MODULE: {r['task']} ---\n{r['content']}\n"
+            combined_context += f"\n\n--- {r['task']} ---\n{r['content']}\n"
     
         # --- SEQUENTIAL IMAGE RETRIEVAL WITH HISTORY ---
         image_assets = []
@@ -287,7 +291,7 @@ class MasterOrchestrator:
         {assets_md}
         
         INSTRUCTIONS:
-        1. Write a massive, professional technical report.
+        1. Write a massive, professional technical report, 2. incorporating the findings from each ANNEXURE provided in the data.
         2. You MUST integrate the images provided in the assets list into the flow of the text.
         3. Refer to them clearly (e.g., "The diagram in Figure 1 illustrates...", "As shown below...").
         4. Place the Markdown image tag immediately after the paragraph that references it.
