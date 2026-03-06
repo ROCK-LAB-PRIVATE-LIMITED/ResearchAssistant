@@ -221,52 +221,41 @@ class MasterOrchestrator:
     def finalize_report(self, original_query: str, all_results: List[Dict], project_title: str, vision_config=None):
         safe_print("\n[ORCHESTRATOR] Synthesizing final master report...")
         
-        # 1. Prepare the raw knowledge base
+        # PROVIDE THE FULL KNOWLEDGEBASE
         combined_context = ""
         for r in all_results:
             combined_context += f"\n\n--- MODULE: {r['task']} ---\n{r['content']}\n"
     
-        # 2. Pre-fetch Image Assets (Only if provisioned)
         image_assets_markdown = ""
         if vision_config and vision_config.get("enabled"):
             try:
-                safe_print("[ORCHESTRATOR] Engaging Vision Agent to find pre-writing assets...")
                 vision_agent = VisionImageAgent(
                     api_key=vision_config["api_key"],
                     base_url=vision_config["base_url"],
                     model_name=vision_config["model_name"]
                 )
-                # This returns a list of verified image objects
-                assets = vision_agent.get_image_assets(combined_context)
+                # Call the new Sequential Loop
+                assets = vision_agent.get_image_assets(combined_context, target_count=10)
                 
                 if assets:
-                    image_assets_markdown = "\n### AVAILABLE IMAGE ASSETS\n"
-                    image_assets_markdown += "You MUST include the following images in the report where relevant. Use the exact Markdown provided:\n"
+                    image_assets_markdown = "\n### MANDATORY VISUAL ASSETS\n"
+                    image_assets_markdown += "You MUST integrate ALL of these images into the report. Do not skip any.\n"
                     for asset in assets:
-                        image_assets_markdown += f"- Asset: ![{asset['description']}]({asset['url']})\n"
+                        image_assets_markdown += f"- ![{asset['description']}]({asset['url']})\n"
             except Exception as e:
-                safe_print(f"[VISION ERROR] Asset retrieval failed: {e}")
+                safe_print(f"[VISION ERROR] Illustrator loop failed: {e}")
 
-        # 3. Final Synthesis (Now with knowledge of the images)
+        # Final Synthesis uses the FULL context + the ASSETS list
         synthesis_prompt = f"""
         # {original_query}
-        
-        TASK: Write a massive, professional technical report titled '{project_title}'.
-        
-        KNOWLEDGE BASE:
-        {combined_context}
-        
+        TECHNICAL DATA: {combined_context}
         {image_assets_markdown}
         
-        CRITICAL RULES:
-        1. Integrate the knowledge into a seamless narrative.
-        2. If Image Assets are provided above, insert them into relevant sections.
-        3. Maintain all technical citations [Source X].
-        4. Ensure the report is exhaustive and professional.
+        INSTRUCTION: Write an exhaustive, multi-chapter technical report. 
+        Strategically place the images provided above near their relevant technical descriptions.
         """
         
-        final_report = self.llm.invoke([SystemMessage(content=synthesis_prompt)]).content
-        return final_report
+        return self.llm.invoke([SystemMessage(content=synthesis_prompt)]).content
 
     def update_settings(self, api_key: str, base_url: str, model_name: str):
         """Pydantic-safe way to update the LLM."""

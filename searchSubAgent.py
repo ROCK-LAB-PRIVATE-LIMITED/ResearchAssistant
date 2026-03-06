@@ -554,49 +554,69 @@ import json
 
 class VisionImageAgent:
     def __init__(self, api_key, base_url, model_name):
-        self.llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url)
+        self.llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url, temperature=0.2)
 
-    def get_image_assets(self, context_text):
-        """Finds 10 validated images and returns them as a list of dictionaries."""
-        safe_print("[VISION] Identifying 10 high-quality visual assets...")
+    def get_image_assets(self, full_context_text, target_count=10):
+        """Sequential loop to find unique, relevant images one at a time."""
+        safe_print(f"[VISION] Engaging Illustrator Agent to find {target_count} unique assets...")
         
-        # 1. Generate search queries based on the combined context
-        query_prompt = f"""
-        Review this research data and generate 15 distinct, technical image search queries 
-        that would help visualize the concepts described. 
-        Return ONLY a comma-separated list of queries.
-        
-        DATA SUMMARY: {context_text[:2000]}
-        """
-        query_job = self.llm.invoke([SystemMessage(content=query_prompt)])
-        queries = [q.strip() for q in query_job.content.split(",")]
-
         found_assets = []
-        with DDGS() as ddgs:
-            for q in queries:
-                if len(found_assets) >= 10: break
+        seen_urls = set()
+        attempts = 0
+        max_attempts = target_count * 2 # Safety break to prevent infinite loops
+
+        while len(found_assets) < target_count and attempts < max_attempts:
+            attempts += 1
+            
+            # 1. PERSONA-BASED QUERY GENERATION
+            # We provide the FULL context and the CURRENTLY FOUND assets
+            current_assets_str = json.dumps(found_assets, indent=2) if found_assets else "None yet."
+            
+            illustrator_prompt = f"""
+            You are the Lead Illustrator for a high-level technical report.
+            
+            REPORT DATA:
+            {full_context_text}
+            
+            CURRENTLY SELECTED ASSETS:
+            {current_assets_str}
+            
+            GOAL: Select {target_count} unique, high-quality images. You currently have {len(found_assets)}.
+            
+            TASK: Based on the report data and what we already have, what is the SINGLE most important technical search query for the NEXT image? 
+            Ensure it does not overlap with existing assets.
+            Return ONLY the search query text.
+            """
+            
+            query = self.llm.invoke([SystemMessage(content=illustrator_prompt)]).content.strip().replace('"', '')
+            safe_print(f" [ILLUSTRATOR] Seeking Asset {len(found_assets)+1}: '{query}'")
+
+            # 2. SEARCH AND SELECTION
+            with DDGS() as ddgs:
+                results = list(ddgs.images(query, max_results=10))
+                found_for_this_query = False
                 
-                # Fetch more per query to increase chances of finding >320x240
-                results = list(ddgs.images(q, max_results=8))
                 for r in results:
+                    url = r['image']
+                    if url in seen_urls: continue
+                    
                     try:
-                        resp = requests.get(r['image'], timeout=5)
-                        
-                        # A. REQUIREMENT: Min size 320x240 check (Python level)
+                        # A. DOWNLOAD & SIZE CHECK
+                        resp = requests.get(url, timeout=5)
                         img = Image.open(io.BytesIO(resp.content))
-                        width, height = img.size
-                        if width < 320 or height < 240:
+                        if img.size[0] < 320 or img.size[1] < 240:
                             continue
 
-                        # B. REQUIREMENT: Resample to 320x240 for Model Judgment
+                        # B. RESAMPLE FOR MODEL VISION
+                        # (Requirement: 320x240 judgment)
                         b64_resampled = self._resample_for_model(resp.content)
                         if not b64_resampled: continue
 
-                        # C. REQUIREMENT: Vision Model Validation
+                        # C. VISION VERIFICATION
                         check_msg = {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": f"Is this image a relevant, high-quality technical illustration for the query '{q}'? Reply ONLY with 'YES' or 'NO'."},
+                                {"type": "text", "text": f"Context: This is for a report on {query}. Is this specific image a professional, relevant technical illustration? Answer YES or NO."},
                                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_resampled}"}}
                             ]
                         }
@@ -604,23 +624,27 @@ class VisionImageAgent:
                         validation = self.llm.invoke([check_msg]).content
                         
                         if "YES" in validation.upper():
-                            # Create a concise description for the final writer
-                            desc_prompt = f"Create a 5-word professional caption for an image representing: {q}"
-                            description = self.llm.invoke([SystemMessage(content=desc_prompt)]).content.strip().replace('"', '')
+                            # D. GENERATE CAPTION
+                            caption_prompt = f"Create a 6-word technical caption for this image: {query}"
+                            caption = self.llm.invoke([SystemMessage(content=caption_prompt)]).content.strip().replace('"', '')
                             
                             found_assets.append({
-                                "url": r['image'],
-                                "description": description
+                                "url": url,
+                                "description": caption
                             })
-                            safe_print(f" [VISION] Asset {len(found_assets)} validated: {description}")
-                            break # Move to next search query
-                    except:
+                            seen_urls.add(url)
+                            safe_print(f" [SUCCESS] Asset {len(found_assets)} added: {caption}")
+                            found_for_this_query = True
+                            break # Move to the next Illustrator turn
+                    except Exception:
                         continue
+                
+                if not found_for_this_query:
+                    safe_print(f" [REJECTED] No suitable images found for '{query}'. AI will try a different query.")
 
         return found_assets
 
     def _resample_for_model(self, image_bytes):
-        """Resamples to 320x240 for the model's judgment as requested."""
         try:
             img = Image.open(io.BytesIO(image_bytes))
             if img.mode != 'RGB':
