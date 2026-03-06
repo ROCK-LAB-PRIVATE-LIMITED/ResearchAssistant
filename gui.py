@@ -300,7 +300,7 @@ elif st.session_state.step == "research":
                 if os.path.exists(pdf_path):
                     with open(pdf_path, "rb") as f:
                         st.download_button(
-                            label="📥 Download",
+                            label="💾 Download",
                             data=f.read(),
                             file_name=pdf_name,
                             mime="application/pdf",
