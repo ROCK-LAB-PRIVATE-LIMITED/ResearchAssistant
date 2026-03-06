@@ -486,7 +486,11 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
         model=config.get("model_name", MODEL_NAME),
         api_key=config.get("api_key", OPENROUTER_API_KEY),
         base_url=config.get("base_url", BASE_URL),
-        temperature=0
+        temperature=0,
+        #default_headers={
+        #    "HTTP-Referer": "https://rocklab.com", # Your site or GitHub repo
+        #    "X-Title": "Rock Lab Research Assistant"
+        #}
     )
 
     if st_ctx:
@@ -554,7 +558,16 @@ import json
 
 class VisionImageAgent:
     def __init__(self, api_key, base_url, model_name):
-        self.llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url, temperature=0.1)
+        self.llm = ChatOpenAI(
+            model=model_name, 
+            api_key=api_key, 
+            base_url=base_url, 
+            temperature=0.1,
+            #default_headers={
+            #    "HTTP-Referer": "https://rocklab.in",
+            #    "X-Title": "Rock Lab Research Assistant"
+            #}
+        )
 
     def find_and_verify_single_image(self, query, master_context): # Now accepts master_context
         """DuckDuckGo search and Master-Context-Aware Vision Verification."""

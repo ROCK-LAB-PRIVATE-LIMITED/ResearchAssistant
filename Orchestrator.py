@@ -27,7 +27,11 @@ orchestrator_llm = ChatOpenAI(
     model=MODEL_NAME, 
     api_key=OPENROUTER_API_KEY,
     base_url="https://openrouter.ai/api/v1",
-    temperature=0
+    temperature=0,
+    #default_headers={
+    #    "HTTP-Referer": "https://rocklab.com", # Your site or GitHub repo
+    #    "X-Title": "Rock Lab Research Assistant"
+    #}
 )
 
 def get_gmt_string():
@@ -48,7 +52,7 @@ class ClarificationQuestions(BaseModel):
 
 class ProjectName(BaseModel):
     """Generate a concise, filename-safe title for the project."""
-    title: str = Field(description="3-5 words, technical, underscores instead of spaces, no special characters")
+    title: str = Field(description="3-5 words, technical, no special characters. Cannot be generic like 'Research Project'")
     
 # ==========================================
 # 3. THE MASTER AGENT
@@ -297,7 +301,11 @@ class MasterOrchestrator:
             model=model_name,
             api_key=api_key,
             base_url=base_url,
-            temperature=0
+            temperature=0,
+            #default_headers={
+            #    "HTTP-Referer": "https://rocklab.com", # Your site or GitHub repo
+            #    "X-Title": "Rock Lab Research Assistant"
+            #}
         )
         
 # ==========================================
