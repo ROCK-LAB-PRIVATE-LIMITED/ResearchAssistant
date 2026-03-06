@@ -221,12 +221,14 @@ class MasterOrchestrator:
     def finalize_report(self, original_query: str, all_results: List[Dict], project_title: str, vision_config=None):
         safe_print("\n[ORCHESTRATOR] Synthesizing final master report...")
         
-        # PROVIDE THE FULL KNOWLEDGEBASE
         combined_context = ""
         for r in all_results:
             combined_context += f"\n\n--- MODULE: {r['task']} ---\n{r['content']}\n"
     
-        image_assets_markdown = ""
+        # --- SEQUENTIAL IMAGE RETRIEVAL WITH HISTORY ---
+        image_assets = []
+        search_history = [] # Tracks [(Query, Caption), ...]
+        
         if vision_config and vision_config.get("enabled"):
             try:
                 vision_agent = VisionImageAgent(
@@ -234,27 +236,58 @@ class MasterOrchestrator:
                     base_url=vision_config["base_url"],
                     model_name=vision_config["model_name"]
                 )
-                # Call the new Sequential Loop
-                assets = vision_agent.get_image_assets(combined_context, target_count=10)
                 
-                if assets:
-                    image_assets_markdown = "\n### MANDATORY VISUAL ASSETS\n"
-                    image_assets_markdown += "You MUST integrate ALL of these images into the report. Do not skip any.\n"
-                    for asset in assets:
-                        image_assets_markdown += f"- ![{asset['description']}]({asset['url']})\n"
-            except Exception as e:
-                safe_print(f"[VISION ERROR] Illustrator loop failed: {e}")
+                for i in range(10): # Aim for 10 images
+                    # 1. GENERATE QUERY (Master Turn - uses full context)
+                    prev_assets = json.dumps(image_assets, indent=2)
+                    query_prompt = f"""
+                    REPORT DATA: {combined_context}
+                    
+                    PREVIOUS SEARCHES AND RESULTS:
+                    {json.dumps(search_history, indent=2) if search_history else "None"}
+                    
+                    TASK: Generate a SINGLE, highly specific technical or conceptual image search query for the NEXT image.
+                    
+                    RULES:
+                    1. The query must explore a DIFFERENT, non-redundant aspect of the report than previous searches.
+                    2. Aim for diverse visual types (diagrams, graphs, conceptual visuals, historical photos if relevant).
+                    3. Return ONLY the search query text.
+                    """
+                    query = self.llm.invoke([SystemMessage(content=query_prompt)]).content.strip().replace('"', '')
+                    
+                    safe_print(f" [MASTER] Turn {i+1}: Generating search for '{query}'")
+                    
+                    # 2. SEARCH & VISION JUDGE (Vision Turn - now with full master_context)
+                    asset = vision_agent.find_and_verify_single_image(query, combined_context) # Pass full context here
+                    
+                    if asset:
+                        image_assets.append(asset)
+                        search_history.append({"query": query, "result": asset['description']})
+                        safe_print(f" [SUCCESS] Asset {len(image_assets)} confirmed.")
+                    else:
+                        search_history.append({"query": query, "result": "REJECTED - No high-quality visual found"})
+                        safe_print(f" [SKIPPED] No professional visual for '{query}'.")
 
-        # Final Synthesis uses the FULL context + the ASSETS list
+            except Exception as e:
+                safe_print(f" [LIMIT/ERROR] Image loop salvaged at {len(image_assets)} assets: {e}")
+
+        # --- INTEGRATED WRITING PROMPT ---
+        assets_md = "\n".join([f"- ![{a['description']}]({a['url']})" for a in image_assets])
         synthesis_prompt = f"""
         # {original_query}
-        TECHNICAL DATA: {combined_context}
-        {image_assets_markdown}
         
-        INSTRUCTION: Write an exhaustive, multi-chapter technical report. 
-        Strategically place the images provided above near their relevant technical descriptions.
+        DATA: 
+        {combined_context}
+        
+        AVAILABLE VISUAL ASSETS:
+        {assets_md}
+        
+        INSTRUCTIONS:
+        1. Write a massive, professional technical report.
+        2. You MUST integrate the images provided in the assets list into the flow of the text.
+        3. Refer to them clearly (e.g., "The diagram in Figure 1 illustrates...", "As shown below...").
+        4. Place the Markdown image tag immediately after the paragraph that references it.
         """
-        
         return self.llm.invoke([SystemMessage(content=synthesis_prompt)]).content
 
     def update_settings(self, api_key: str, base_url: str, model_name: str):

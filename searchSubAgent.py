@@ -554,107 +554,77 @@ import json
 
 class VisionImageAgent:
     def __init__(self, api_key, base_url, model_name):
-        self.llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url, temperature=0.2)
+        self.llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url, temperature=0.1)
 
-    def get_image_assets(self, full_context_text, target_count=10):
-        """Sequential loop to find unique, relevant images one at a time."""
-        safe_print(f"[VISION] Engaging Illustrator Agent to find {target_count} unique assets...")
+    def find_and_verify_single_image(self, query, master_context): # Now accepts master_context
+        """DuckDuckGo search and Master-Context-Aware Vision Verification."""
         
-        found_assets = []
-        seen_urls = set()
-        attempts = 0
-        max_attempts = target_count * 2 # Safety break to prevent infinite loops
-
-        while len(found_assets) < target_count and attempts < max_attempts:
-            attempts += 1
+        with DDGS() as ddgs:
+            results = list(ddgs.images(query, max_results=8)) # Search up to 8 images per query
             
-            # 1. PERSONA-BASED QUERY GENERATION
-            # We provide the FULL context and the CURRENTLY FOUND assets
-            current_assets_str = json.dumps(found_assets, indent=2) if found_assets else "None yet."
-            
-            illustrator_prompt = f"""
-            You are the Lead Illustrator for a high-level technical report.
-            
-            REPORT DATA:
-            {full_context_text}
-            
-            CURRENTLY SELECTED ASSETS:
-            {current_assets_str}
-            
-            GOAL: Select {target_count} unique, high-quality images. You currently have {len(found_assets)}.
-            
-            TASK: Based on the report data and what we already have, what is the SINGLE most important technical search query for the NEXT image? 
-            Ensure it does not overlap with existing assets.
-            Return ONLY the search query text.
-            """
-            
-            query = self.llm.invoke([SystemMessage(content=illustrator_prompt)]).content.strip().replace('"', '')
-            safe_print(f" [ILLUSTRATOR] Seeking Asset {len(found_assets)+1}: '{query}'")
-
-            # 2. SEARCH AND SELECTION
-            with DDGS() as ddgs:
-                results = list(ddgs.images(query, max_results=10))
-                found_for_this_query = False
-                
-                for r in results:
-                    url = r['image']
-                    if url in seen_urls: continue
-                    
-                    try:
-                        # A. DOWNLOAD & SIZE CHECK
-                        resp = requests.get(url, timeout=5)
-                        img = Image.open(io.BytesIO(resp.content))
-                        if img.size[0] < 320 or img.size[1] < 240:
-                            continue
-
-                        # B. RESAMPLE FOR MODEL VISION
-                        # (Requirement: 320x240 judgment)
-                        b64_resampled = self._resample_for_model(resp.content)
-                        if not b64_resampled: continue
-
-                        # C. VISION VERIFICATION
-                        check_msg = {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": f"Context: This is for a report on {query}. Is this specific image a professional, relevant technical illustration? Answer YES or NO."},
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_resampled}"}}
-                            ]
-                        }
-                        
-                        validation = self.llm.invoke([check_msg]).content
-                        
-                        if "YES" in validation.upper():
-                            # D. GENERATE CAPTION
-                            caption_prompt = f"Create a 6-word technical caption for this image: {query}"
-                            caption = self.llm.invoke([SystemMessage(content=caption_prompt)]).content.strip().replace('"', '')
-                            
-                            found_assets.append({
-                                "url": url,
-                                "description": caption
-                            })
-                            seen_urls.add(url)
-                            safe_print(f" [SUCCESS] Asset {len(found_assets)} added: {caption}")
-                            found_for_this_query = True
-                            break # Move to the next Illustrator turn
-                    except Exception:
+            for r in results:
+                url = r['image']
+                try:
+                    resp = requests.get(url, timeout=5)
+                    # 1. Physical Check (>320x240)
+                    img = Image.open(io.BytesIO(resp.content))
+                    if img.size[0] < 320 or img.size[1] < 240:
                         continue
-                
-                if not found_for_this_query:
-                    safe_print(f" [REJECTED] No suitable images found for '{query}'. AI will try a different query.")
 
-        return found_assets
+                    # 2. Resample for the 320x240 requirement (model judgment)
+                    b64_resampled = self._resample_for_model(resp.content)
+                    if not b64_resampled: # Skip if resampling failed
+                        continue
+                    
+                    # YOUR EXACT PROMPT - MASTER CONTEXT INCLUDED
+                    check_msg = {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text", 
+                                "text": f"""
+                                Is this image a high-quality, professional visual for the given context?
+                                
+                                MASTER CONTEXT:
+                                {master_context}
+                                
+                                REJECTION CRITERIA (Respond NO if any apply):
+                                1. It is a screenshot of a research paper or document text.
+                                2. It is text-heavy (charts are okay, walls of text are not).
+                                3. It is only vaguely related to the technical core of the context.
+                                
+                                If it is a PERFECT match, respond: 'YES: [caption for the image]'.
+                                Otherwise, respond: 'NO'.
+                                """
+                            },
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_resampled}"}}
+                        ]
+                    }
+                    
+                    res = self.llm.invoke([check_msg]).content.strip()
+                    
+                    if res.upper().startswith("YES"):
+                        # Extract caption
+                        caption = res.split(":", 1)[1].strip() if ":" in res else f"Visualization of {query}"
+                        return {"url": url, "description": caption}
+                    
+                    # If AI says "NO", the loop continues to the next search result from DDGS
+                except Exception as e:
+                    # Catch and log errors during fetching/processing specific image
+                    # safe_print(f" [DEBUG] Error processing image from {url}: {e}")
+                    continue # Try the next image from DDGS results
+        return None # If all 8 results fail for the given query
 
     def _resample_for_model(self, image_bytes):
+        """Strictly resamples to 320x240 for the judge turn, returns Base64."""
         try:
             img = Image.open(io.BytesIO(image_bytes))
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
+            if img.mode != 'RGB': img = img.convert('RGB')
             img_resampled = img.resize((320, 240), Image.Resampling.LANCZOS)
             buffered = io.BytesIO()
             img_resampled.save(buffered, format="JPEG")
             return base64.b64encode(buffered.getvalue()).decode('utf-8')
-        except:
-            return None
+        except: return None
 
 if __name__ == "__main__":  
     test()
