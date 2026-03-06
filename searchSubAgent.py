@@ -84,7 +84,7 @@ def render_markdown_to_pdf(md_path: str, pdf_path: str):
     try:
         # 1. Read Markdown
         with open(md_path, "r", encoding="utf-8") as f:
-            md_text = f.read()
+            md_text = f.read().replace('![', '[')
 
         # 2. Convert to HTML
         html_text = markdown(
@@ -593,7 +593,7 @@ class VisionImageAgent:
                                 2. It is text-heavy (charts are okay, walls of text are not).
                                 3. It is only vaguely related to the technical core of the context.
                                 
-                                If it is a PERFECT match, respond: 'YES: [caption for the image]'.
+                                If it is a PERFECT match, respond: 'YES: [detailed caption for the image]'.
                                 Otherwise, respond: 'NO'.
                                 """
                             },
