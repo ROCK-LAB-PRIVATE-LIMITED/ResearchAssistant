@@ -79,3 +79,4 @@ pytest_cache/
 redist/
 assets/
 *config*
+OUTPUT
