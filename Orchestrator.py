@@ -15,6 +15,7 @@ import re
 import traceback 
 import datetime
 from ddgs import DDGS
+from searchSubAgent import VisionImageAgent 
 # ==========================================
 # 1. ORCHESTRATOR SETTINGS
 # ==========================================
@@ -217,22 +218,53 @@ class MasterOrchestrator:
             
         return results
 
-    def finalize_report(self, original_query: str, all_results: List[Dict], project_title: str):
+    def finalize_report(self, original_query: str, all_results: List[Dict], project_title: str, vision_config=None):
         safe_print("\n[ORCHESTRATOR] Synthesizing final master report...")
         
+        # 1. Prepare the raw knowledge base
         combined_context = ""
         for r in all_results:
             combined_context += f"\n\n--- MODULE: {r['task']} ---\n{r['content']}\n"
+    
+        # 2. Pre-fetch Image Assets (Only if provisioned)
+        image_assets_markdown = ""
+        if vision_config and vision_config.get("enabled"):
+            try:
+                safe_print("[ORCHESTRATOR] Engaging Vision Agent to find pre-writing assets...")
+                vision_agent = VisionImageAgent(
+                    api_key=vision_config["api_key"],
+                    base_url=vision_config["base_url"],
+                    model_name=vision_config["model_name"]
+                )
+                # This returns a list of verified image objects
+                assets = vision_agent.get_image_assets(combined_context)
+                
+                if assets:
+                    image_assets_markdown = "\n### AVAILABLE IMAGE ASSETS\n"
+                    image_assets_markdown += "You MUST include the following images in the report where relevant. Use the exact Markdown provided:\n"
+                    for asset in assets:
+                        image_assets_markdown += f"- Asset: ![{asset['description']}]({asset['url']})\n"
+            except Exception as e:
+                safe_print(f"[VISION ERROR] Asset retrieval failed: {e}")
 
+        # 3. Final Synthesis (Now with knowledge of the images)
         synthesis_prompt = f"""
         # {original_query}
         
-        Integrate the following data into a massive, integrated report titled {project_title}.
-        Data:
+        TASK: Write a massive, professional technical report titled '{project_title}'.
+        
+        KNOWLEDGE BASE:
         {combined_context}
+        
+        {image_assets_markdown}
+        
+        CRITICAL RULES:
+        1. Integrate the knowledge into a seamless narrative.
+        2. If Image Assets are provided above, insert them into relevant sections.
+        3. Maintain all technical citations [Source X].
+        4. Ensure the report is exhaustive and professional.
         """
         
-        # Direct text completion
         final_report = self.llm.invoke([SystemMessage(content=synthesis_prompt)]).content
         return final_report
 

@@ -51,7 +51,25 @@ with st.sidebar:
             s_model = st.text_input("Agent Model", value=saved_prefs.get("s_model", "stepfun/step-3.5-flash:free"))
     else:
         s_key, s_base, s_model = o_key, o_base, o_model
+    
+    vision_config = {"enabled": False} 
 
+    use_vision = st.checkbox("Enable Image Search & Insertion", value=False)
+    
+    if use_vision:
+        with st.expander("👁️ Illustrator", expanded=True):            
+            v_key = st.text_input("Vision API Key", value="", type="password", help="Needs a vision-capable model")
+            v_base = st.text_input("Vision Base URL", value="https://openrouter.ai/api/v1")
+            v_model = st.text_input("Vision Model", value="nvidia/nemotron-nano-12b-v2-vl:free")
+        
+            # 2. Overwrite only if enabled and key is present
+            vision_config = {
+                "enabled": len(v_key) > 5, 
+                "api_key": v_key,
+                "base_url": v_base,
+                "model_name": v_model
+            }
+    
     with st.expander("🛠️ Limits & Style"):
         max_agents = st.slider("Max Parallel Agents", 1, 10, saved_prefs.get("max_agents", 4))
         footer_val = st.text_input("PDF Footer", saved_prefs.get("footer_val", "ROCK LAB PRIVATE LIMITED"))
@@ -72,6 +90,8 @@ with st.sidebar:
         "base_url": s_base,
         "model_name": s_model
     }
+    st.divider()
+    
 
 # ==========================================
 # APP LOGIC
@@ -141,7 +161,7 @@ elif st.session_state.step == "sequential_loop":
 
     with col2:
         # SKIP BUTTON (Visible from 2nd question onwards)
-        if it > 0: 
+        if it >= 0: 
             if st.button("⏩ Skip remaining & Run Now", use_container_width=True):
                 # If they typed something in the current box before skipping, save it
                 if user_ans:
@@ -199,7 +219,8 @@ elif st.session_state.step == "research":
             st.session_state.final_report = st.session_state.master.finalize_report(
                 st.session_state.query, 
                 sub_reports,
-                st.session_state.project_title
+                st.session_state.project_title,
+                vision_config=vision_config
             )
             report_name = st.session_state.project_title
             m_md = os.path.join(st.session_state.folder, f"{report_name}.md")

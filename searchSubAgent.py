@@ -544,6 +544,94 @@ def run_subagent(search_prompt, task_name, output_dir=".", st_placeholder=None, 
             st_placeholder.error(f"❌ {task_name} failed. Check console.")
         return f"Error in {task_name}: {str(e)}"
 
+import io
+import base64
+import requests
+from PIL import Image
+from ddgs import DDGS
+from langchain_openai import ChatOpenAI
+import json
+
+class VisionImageAgent:
+    def __init__(self, api_key, base_url, model_name):
+        self.llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url)
+
+    def get_image_assets(self, context_text):
+        """Finds 10 validated images and returns them as a list of dictionaries."""
+        safe_print("[VISION] Identifying 10 high-quality visual assets...")
+        
+        # 1. Generate search queries based on the combined context
+        query_prompt = f"""
+        Review this research data and generate 15 distinct, technical image search queries 
+        that would help visualize the concepts described. 
+        Return ONLY a comma-separated list of queries.
+        
+        DATA SUMMARY: {context_text[:2000]}
+        """
+        query_job = self.llm.invoke([SystemMessage(content=query_prompt)])
+        queries = [q.strip() for q in query_job.content.split(",")]
+
+        found_assets = []
+        with DDGS() as ddgs:
+            for q in queries:
+                if len(found_assets) >= 10: break
+                
+                # Fetch more per query to increase chances of finding >320x240
+                results = list(ddgs.images(q, max_results=8))
+                for r in results:
+                    try:
+                        resp = requests.get(r['image'], timeout=5)
+                        
+                        # A. REQUIREMENT: Min size 320x240 check (Python level)
+                        img = Image.open(io.BytesIO(resp.content))
+                        width, height = img.size
+                        if width < 320 or height < 240:
+                            continue
+
+                        # B. REQUIREMENT: Resample to 320x240 for Model Judgment
+                        b64_resampled = self._resample_for_model(resp.content)
+                        if not b64_resampled: continue
+
+                        # C. REQUIREMENT: Vision Model Validation
+                        check_msg = {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"Is this image a relevant, high-quality technical illustration for the query '{q}'? Reply ONLY with 'YES' or 'NO'."},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_resampled}"}}
+                            ]
+                        }
+                        
+                        validation = self.llm.invoke([check_msg]).content
+                        
+                        if "YES" in validation.upper():
+                            # Create a concise description for the final writer
+                            desc_prompt = f"Create a 5-word professional caption for an image representing: {q}"
+                            description = self.llm.invoke([SystemMessage(content=desc_prompt)]).content.strip().replace('"', '')
+                            
+                            found_assets.append({
+                                "url": r['image'],
+                                "description": description
+                            })
+                            safe_print(f" [VISION] Asset {len(found_assets)} validated: {description}")
+                            break # Move to next search query
+                    except:
+                        continue
+
+        return found_assets
+
+    def _resample_for_model(self, image_bytes):
+        """Resamples to 320x240 for the model's judgment as requested."""
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img_resampled = img.resize((320, 240), Image.Resampling.LANCZOS)
+            buffered = io.BytesIO()
+            img_resampled.save(buffered, format="JPEG")
+            return base64.b64encode(buffered.getvalue()).decode('utf-8')
+        except:
+            return None
+
 if __name__ == "__main__":  
     test()
     
