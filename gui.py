@@ -37,6 +37,7 @@ with st.sidebar:
     # 1. ORCHESTRATOR SETTINGS
     with st.expander("Orchestrator (Master)", expanded=True):
         o_key = st.text_input("Master API Key", value=saved_prefs.get("o_key", ""), type="password")
+        "[Get your OpenRouter key for free!](https://openrouter.ai/keys)"
         o_base = st.text_input("Master Base URL", value=saved_prefs.get("o_base", "https://openrouter.ai/api/v1"))
         o_model = st.text_input("Master Model", value=saved_prefs.get("o_model", "stepfun/step-3.5-flash:free"))
 
