@@ -291,7 +291,7 @@ class MasterOrchestrator:
         {assets_md}
         
         INSTRUCTIONS:
-        1. Write a massive, professional technical report, 2. incorporating the findings from each ANNEXURE provided in the data.
+        1. Write a massive, professional technical report, incorporating the findings from each ANNEXURE provided in the data.
         2. You MUST integrate the images provided in the assets list into the flow of the text.
         3. Refer to them clearly (e.g., "The diagram in Figure 1 illustrates...", "As shown below...").
         4. Place the Markdown image tag immediately after the paragraph that references it.
